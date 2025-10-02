@@ -20,12 +20,18 @@ assignment2-rag/
 ├── results/ # Experimental results
 │ ├── naive_results.json # Results from Naive RAG
 │ ├── enhanced_results.json # Results from Enhanced RAG
-│ └── comparison_analysis.csv # Side-by-side performance comparison
 ├── notebooks/
 │ └── data_exploration.ipynb # Dataset exploration and prototyping
 ├── docs/
 │ └── final_report.md # Final report (summary, architecture, results)
 └── requirements.txt # Python dependencies
+|
+└── config.json # All config
+└── prompts.json # Three prompt strategies
+└── naive_data.json # Generated from Naive RAG, can be directly used for Ragas 
+└── enhanced_data.json # Generated from Enhanced RAG, can be directly used for Ragas
+
+
 ```
 
 

@@ -300,7 +300,42 @@ def evaluate_phase_2_enhanced_rag(output_path: str = "results/enhanced_results.j
         print(f"Evaluation failed: {e}")
         return None
 
+def experiment_phase_2(test_data_size: int = 100, output_path: str = "results/enhanced_results.json"):
+    """
+    Evaluate the Enhanced RAG with different parameter combination of top-k (1,3,5) and prompt strategy (CoT, Persona Prompting, Instruction Prompt).
+    """
+    with open("config.json", "r") as f:
+        config = json.load(f)
+    top_k_list = [1, 3, 5]
+    prompt_strategy_list = ["cot", "persona", "instruction"]
+    for top_k in top_k_list:
+        for prompt_strategy in prompt_strategy_list:
+            print(f"Evaluating {prompt_strategy} system prompt with top-k = {top_k}")
+            config["top_k"] = top_k
+            config["prompt_type"] = prompt_strategy
+            with open("config.json", "w") as f:
+                json.dump(config, f, indent=4)
+            enhanced_rag = EnhancedRAG(config_path="config.json")
+            enhanced_rag.load_reranker()
+            enhanced_rag.load_embedding_model()
+            enhanced_rag.load_llm_model()
+            enhanced_rag.load_documents("hf://datasets/rag-datasets/rag-mini-wikipedia/data/passages.parquet/part.0.parquet", col_name="passage", num_rows=3200)
+            enhanced_rag.load_test_data("hf://datasets/rag-datasets/rag-mini-wikipedia/data/test.parquet/part.0.parquet")
+            enhanced_rag.build_index()
+            evaluation_results = enhanced_rag.evaluate(test_data_size=test_data_size, question_col="question", answer_col="answer")
+            print(f"Evaluation results: {evaluation_results['num_samples']} samples, F1: {evaluation_results['average_f1_score']:.3f}, EM: {evaluation_results['average_exact_match']:.3f}")
+            summary = {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "prompt_type": prompt_strategy,
+                "top_k": top_k,
+                "num_samples": evaluation_results["num_samples"],
+                "average_f1_score": evaluation_results["average_f1_score"],
+                "average_exact_match": evaluation_results["average_exact_match"]
+            }
+            save_as_array(output_path, summary)
+
+
 if __name__ == "__main__":
     # evaluate_phase_1(test_data_size=100)
     # experiment(test_size=100, output_path="results/naive_results.json")
-    evaluate_phase_2_enhanced_rag(test_data_size=100, data_path="enhanced_data.json")
+    experiment_phase_2(test_data_size=100, output_path="results/enhanced_results.json")
