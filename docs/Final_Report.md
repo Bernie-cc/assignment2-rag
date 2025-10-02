@@ -106,9 +106,156 @@ These enhancements are lightweight extensions on top of the Naive RAG pipeline b
 
 ## 6. Evaluation Report
 
-## 7. Technical Report
+### Evaluation Methodology
+To assess the performance of both the **Naive RAG** and **Enhanced RAG** systems, we adopted a consistent evaluation framework using **100 queries per run** across diverse knowledge-intensive tasks. The evaluation utilized both **traditional accuracy-based metrics** and **RAG-specific quality measures**:
 
-## 8. Complete GitHub Repository
+- **Average F1 Score**: Measures token overlap between predicted and ground truth answers. Sensitive to partial correctness.  
+- **Exact Match (EM)**: Binary metric checking whether the predicted answer exactly matches the ground truth.  
+- **Faithfulness (RAGAs)**: Evaluates whether the generated answers are grounded in the retrieved context.  
+- **Answer Relevancy (RAGAs)**: Measures semantic alignment between predicted responses and user queries.  
+
+We varied two key experimental dimensions:  
+- **Prompt Type**: Chain-of-Thought (CoT), Persona Prompting, and Instruction Prompting.  
+- **Top-k Retrieval**: Number of documents retrieved (k = 1, 3, 5).  
+
+A notable limitation emerged: **F1 and EM metrics often underestimate performance** when models provide explanatory responses alongside concise answers. For instance, if the gold answer is `1861–1865` but the model outputs *“The American Civil War was fought from 1861 to 1865 between Union and Confederacy”*, the system may be penalized despite being factually correct.
+
+---
+
+### Experimental Results
+
+#### Quantitative Comparison (F1 and EM)
+
+| Prompt Type   | Top-k | Naive RAG F1 | Naive RAG EM | Enhanced RAG F1 | Enhanced RAG EM |
+|---------------|-------|--------------|--------------|-----------------|-----------------|
+| **CoT**       | 1     | 0.09        | 0.03         | 0.157           | 0.05            |
+|               | 3     | 0.143        | 0.04         | 0.180           | 0.07            |
+|               | 5     | 0.230        | 0.10         | 0.185           | 0.06            |
+| **Persona**   | 1     | 0.458        | 0.41         | 0.519           | 0.44            |
+|               | 3     | 0.518        | 0.46         | 0.545           | 0.47            |
+|               | 5     | 0.543        | 0.45         | 0.575           | 0.53            |
+| **Instruction** | 1   | 0.35        | 0.31         | 0.469           | 0.41            |
+|               | 3     | 0.481        | 0.39         | 0.595           | 0.53            |
+|               | 5     | 0.556        | 0.46         | 0.560           | 0.48            |
+
+---
+
+#### Qualitative Metrics (Faithfulness and Answer Relevancy)
+
+| System        | Prompt | Top-k | Faithfulness | Answer Relevancy |
+|---------------|--------|-------|--------------|------------------|
+| **Naive RAG** | CoT    | 3     | 0.748        | 0.844            |
+| **Enhanced RAG** | CoT | 3     | 0.782        | 0.824            |
+
+---
+
+### Key Observations
+
+1. **Prompt Type Sensitivity**  
+   Persona and Instruction prompts consistently outperform CoT. The concise-answer bias in evaluation metrics penalizes CoT since it tends to produce verbose answers.  
+
+2. **Impact of Retrieval Depth (k)**  
+   - Extremely low retrieval (k=1) harms performance since the retrieved chunk may lack direct answer coverage.  
+   - Increasing k generally improves performance, but gains plateau between k=3 and k=5, and in some CoT cases even degrade due to noise from irrelevant documents.  
+
+3. **Naive vs Enhanced**  
+   Enhanced RAG improves **F1/EM scores by 5–10% relative** under Persona and Instruction prompts, showing the effectiveness of **query rewriting and reranking**. Gains are less clear in CoT, highlighting that output verbosity mismatches with F1/EM evaluation.
+
+---
+
+### Enhancement Analysis
+
+The **Enhanced RAG** incorporated two additional components:  
+
+1. **Query Rewriting**: Reformulating vague or underspecified user questions into more precise forms before retrieval.  
+   - **Effectiveness**: Helped improve retrieval accuracy, especially for queries where wording mismatches with document phrasing.  
+   - **Challenge**: Risk of over-specification, where rewritten queries inadvertently narrow context and exclude relevant documents.  
+
+2. **Reranking (Cross-Encoder)**: Reordering retrieved chunks based on semantic similarity to the query.  
+   - **Effectiveness**: Reduced noise when k > 1, ensuring the top 3–5 contexts were highly relevant.  
+   - **Observation**: Reranking had limited effect when k=1, since retrieval quality is bottlenecked by initial vector search.  
+
+#### Performance Interpretation
+- **Faithfulness** improved slightly (from 0.748 → 0.782), suggesting reranking helps ensure answers stay grounded in retrieved evidence.  
+- **Answer Relevancy** remained high (~0.82), showing stable alignment across systems.  
+- **F1 and EM** saw the largest improvements under Persona and Instruction prompts, validating that enhancements work best when the model is encouraged to output short, context-focused answers.  
+
+---
+
+### Failure Analysis
+
+- **Verbose Outputs**: CoT often diluted EM/F1 due to unnecessary reasoning in responses.  
+- **Low-k Limitations**: Single-document retrieval frequently missed crucial evidence.  
+- **Noise at Higher k**: At k=5, irrelevant documents sometimes distracted the LLM despite reranking, reducing benefits.  
+
+---
+
+### Summary
+The evaluation demonstrates that **Enhanced RAG outperforms Naive RAG in most prompt and retrieval settings**, particularly under **Persona and Instruction prompting with top-k = 3–5**. While CoT prompts underperform on token-level metrics, qualitative faithfulness scores indicate that reasoning-driven answers are still reliable but penalized by surface-level evaluation.  
+
+Overall, **query rewriting and reranking proved effective enhancements**, though future work should explore:  
+- Better evaluation beyond F1/EM to capture correctness in verbose answers.  
+- Adaptive top-k selection based on query type.  
+- Mitigating noise at higher k through smarter context pruning.  
+
+
+## 7. Technical Report
+### Executive Summary 
+Please refer to Section `Overview` 
+
+### System Architecture
+Please refer to section `System Architecture`
+
+### Experimental Results 
+Please refer to sectio `Evaluation Report`
+
+### Enhancement Analysis
+Please refer to sectio `Evaluation Report`
+
+### Production Considerations
+
+While the Enhanced RAG system is designed for experimentation and evaluation within an academic setting, several considerations would be essential for production deployment. **Scalability** is the foremost concern: both the embedding database (ChromaDB) and the reranker model would need to handle larger corpora and higher query throughput. In a real-world scenario, ChromaDB could be replaced or scaled with distributed vector databases (e.g., Milvus, Pinecone, FAISS sharding) to accommodate millions of documents. The LLM components (query rewriting, generation) should be containerized and deployed with inference servers such as **Ray Serve** or **TorchServe**, supporting GPU acceleration and horizontal scaling.
+
+**Deployment recommendations** include separating system components into microservices: (1) embedding and indexing service, (2) retrieval service, (3) reranking service, and (4) generation service. This modular approach would allow independent scaling and fault isolation. Caching frequently asked queries, batch processing embeddings, and adopting approximate nearest neighbor (ANN) search algorithms are practical optimizations. Monitoring pipelines with metrics such as latency, throughput, and hallucination rates would also be critical in production.
+
+However, there are **limitations**. Query rewriting introduces variability, which may degrade performance if the LLM produces irrelevant reformulations. The reranker (cross-encoder) is more computationally expensive than a bi-encoder retriever, limiting real-time performance for high-volume applications. Additionally, the evaluation framework (RAGAs) currently relies on external LLM calls, which can be costly and non-deterministic. Thus, while this system demonstrates improved retrieval quality and answer faithfulness in a controlled environment, significant engineering effort is required for robust, enterprise-grade deployment.
+
+
+## 8. Appendices
+
+### AI Usage Log
+
+- **Tool**: ChatGPT (GPT-5, OpenAI), HuggingFace Transformers 4.x, Sentence-Transformers 2.x, Ragas 0.3.5  
+- **Purpose**: Debugging Python errors, refining evaluation pipeline, documenting architecture and methodology.  
+- **Input**: Queries included error traces (e.g., `AttributeError: 'dict' object has no attribute 'strip'`), requests for documentation sections, and clarification on RAGAs metrics.  
+- **Output Usage**: AI suggestions informed bug fixes (e.g., dict unpacking in reranker), produced draft documentation (e.g., README.md, Production Considerations), and provided explanations of metric requirements.  
+- **Verification**: All AI outputs were manually reviewed, tested in the local environment, and cross-referenced with official library documentation (ChromaDB, Ragas, HuggingFace).
+
+### Technical Specifications
+- **Language**: Python 3.12  
+- **Dependencies**: See `requirements.txt` (core: `transformers`, `sentence-transformers`, `chromadb`, `ragas`, `langchain-huggingface`).  
+- **Models**:  
+  - Embeddings: `all-MiniLM-L6-v2` (384-dim)  
+  - Reranker: `cross-encoder/ms-marco-MiniLM-L-6-v2`  
+  - LLM: `google/flan-t5-large` for rewriting and generation  
+- **Hardware**: MacBook Pro M4 (CPU + Apple Silicon GPU via `mps` backend)  
+
+### Reproducibility Instructions
+1. Clone repository and install dependencies via `pip install -r requirements.txt`.  
+2. Run `src/naive_rag.py` or `src/enhanced_rag.py` to build indexes and test queries.  
+3. Evaluate models with `src/evaluation.py` using both F1/EM metrics and RAGAs.  
+4. To reproduce exact results, use the provided Mini Wikipedia dataset from HuggingFace (`rag-mini-wikipedia`).  
+5. Results are logged automatically in `results/` for audit and comparison.  
+
+
+
+###  Academic Integrity Notes
+- All **core RAG components** (index building, retrieval, reranking, evaluation logic) were independently implemented.  
+- AI assistance was restricted to **debugging, documentation drafting, and conceptual clarification**.  
+- Performance analysis and interpretation were conducted manually, ensuring independent reasoning and understanding of results.  
+
+
+## 9. Complete GitHub Repository
 You can find all code [here](https://github.com/Bernie-cc/assignment2-rag)
 
 

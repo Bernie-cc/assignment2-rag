@@ -1,0 +1,82 @@
+[
+    {
+        "timestamp": "2025-10-01 21:56:20",
+        "num_samples": 100,
+        "prompt_type": "cot",
+        "top_k": 3,
+        "faithfulness": 0.7481666666666666,
+        "answer_relevancy": 0.8437759882289567
+    },
+    {
+        "timestamp": "2025-10-01 22:11:49",
+        "prompt_type": "cot",
+        "top_k": 1,
+        "num_samples": 100,
+        "average_f1_score": 0.09989370717002295,
+        "average_exact_match": 0.03
+    },
+    {
+        "timestamp": "2025-10-01 22:12:27",
+        "prompt_type": "persona",
+        "top_k": 1,
+        "num_samples": 100,
+        "average_f1_score": 0.4584739704739704,
+        "average_exact_match": 0.41
+    },
+    {
+        "timestamp": "2025-10-01 22:13:03",
+        "prompt_type": "instruction",
+        "top_k": 1,
+        "num_samples": 100,
+        "average_f1_score": 0.35033761936987745,
+        "average_exact_match": 0.31
+    },
+    {
+        "timestamp": "2025-10-01 22:14:42",
+        "prompt_type": "cot",
+        "top_k": 3,
+        "num_samples": 100,
+        "average_f1_score": 0.14275543402100324,
+        "average_exact_match": 0.04
+    },
+    {
+        "timestamp": "2025-10-01 22:15:35",
+        "prompt_type": "persona",
+        "top_k": 3,
+        "num_samples": 100,
+        "average_f1_score": 0.5176518256425378,
+        "average_exact_match": 0.46
+    },
+    {
+        "timestamp": "2025-10-01 22:16:27",
+        "prompt_type": "instruction",
+        "top_k": 3,
+        "num_samples": 100,
+        "average_f1_score": 0.48133976249346266,
+        "average_exact_match": 0.39
+    },
+    {
+        "timestamp": "2025-10-01 22:18:48",
+        "prompt_type": "cot",
+        "top_k": 5,
+        "num_samples": 100,
+        "average_f1_score": 0.2300470054587702,
+        "average_exact_match": 0.1
+    },
+    {
+        "timestamp": "2025-10-01 22:20:10",
+        "prompt_type": "persona",
+        "top_k": 5,
+        "num_samples": 100,
+        "average_f1_score": 0.5432893241167435,
+        "average_exact_match": 0.45
+    },
+    {
+        "timestamp": "2025-10-01 22:21:25",
+        "prompt_type": "instruction",
+        "top_k": 5,
+        "num_samples": 100,
+        "average_f1_score": 0.5562717086834733,
+        "average_exact_match": 0.46
+    }
+]
