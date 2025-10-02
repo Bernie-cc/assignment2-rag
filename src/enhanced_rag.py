@@ -1,11 +1,10 @@
 """
-Naive RAG (Retrieval-Augmented Generation) System Implementation.
+Enhanced RAG (Retrieval-Augmented Generation) System Implementation.
 
-This module implements a simple RAG system that:
-1. Embeds documents using sentence-transformers
-2. Stores embeddings in a vector database (ChromaDB)
-3. Retrieves relevant documents for queries
-4. Generates responses using a language model
+This module implements a enhanced RAG system that:
+1. Reuse all featrues from naive RAG system
+2. Add query rewriting to improve the retrieval quality
+3. Add retrieval-reranker to improve the final response
 
 Author: Zijin Cui
 """
@@ -25,6 +24,7 @@ from datetime import datetime
 from langchain_huggingface import HuggingFaceEmbeddings
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from tqdm import tqdm
+from sentence_transformers import CrossEncoder
 
 from utils import (
     setup_logging, load_data, clean_text, generate_embeddings,
@@ -36,9 +36,10 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 
-class NaiveRAG:
+class EnhancedRAG:
     """
-    A simple RAG system implementation using sentence-transformers and ChromaDB.
+    A enhanced RAG system implementation using sentence-transformers and ChromaDB.
+    It reuses all features from naive RAG system and add query rewriting and retrieval-reranker to improve the final response.
     """
     
     def __init__(self, config_path: Optional[str] = None):
@@ -69,9 +70,20 @@ class NaiveRAG:
         self.documents = []
         self.test_data = None
         self.system_prompt = self.load_system_prompt(self.config.get("prompt_type", "cot"))
-        self.top_k = self.config.get("top_k", 5)
+        self.reranker = None
+        self.top_k = self.config.get("top_k", 3)
         
         logger.info("Naive RAG system initialized")
+    
+    def load_reranker(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> None:
+        """
+        Load the reranker model.
+        """
+        try:
+            self.reranker = CrossEncoder(model_name)
+        except Exception as e:
+            logger.error(f"Error loading reranker model: {str(e)}")
+            raise
     
     def load_system_prompt(self, prompt_type: str = "cot") -> str:
         """
@@ -186,6 +198,30 @@ class NaiveRAG:
             logger.error(f"Error loading documents: {str(e)}")
             raise
     
+    def rerank_documents(self, query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Rerank the documents using the reranker model.
+
+        Args:
+            query: Query string
+            documents: List of documents
+        Returns:
+            List of reranked documents
+        """
+        try:
+
+            pairs = [(query, d['text']) for d in documents]
+            scores = self.reranker.predict(pairs)
+            ranked = sorted(zip(documents, scores), key=lambda x: x[1], reverse=True)
+            logger.info(f"Reranked {len(ranked)} documents")
+            logger.info(f"Top {self.top_k} documents will be used for generation")
+            reranked_docs = [doc for doc, _ in ranked[:self.top_k]]
+            assert len(reranked_docs) == self.top_k, f"Reranked {len(reranked_docs)} documents, but expected {self.top_k}"
+            return reranked_docs
+        except Exception as e:
+            logger.error(f"Error reranking documents: {str(e)}")
+            raise
+    
     def build_index(self) -> None:
         """
         Build ChromaDB collection from document embeddings.
@@ -266,9 +302,12 @@ class NaiveRAG:
     def retrieve_documents(self, query: str) -> List[Dict[str, Any]]:
         """
         Retrieve top-k most relevant documents for a query using ChromaDB.
+        Since we have retrieval-reranker, we retrieve more documents than we need and then rerank them.
+        Therefore, we retrieve top_k * 2 documents.
         
         Args:
             query: Query string
+            top_k: Number of documents to retrieve
             
         Returns:
             List of retrieved documents with similarity scores
@@ -281,7 +320,7 @@ class NaiveRAG:
                 raise ValueError("Embedding model not loaded. Call load_embedding_model() first.")
 
         
-            top_k = self.top_k
+            top_k = self.top_k * 2
             
             # Clean query
             clean_query = clean_text(query)
@@ -311,7 +350,7 @@ class NaiveRAG:
                         'similarity_score': float(similarity_score),
                         'document_id': metadata.get('document_id', f"doc_{i}")
                     })
-            assert len(formatted_results) == top_k, f"Retrieved {len(formatted_results)} documents for query, but expected {top_k}"
+            
             logger.info(f"Retrieved {len(formatted_results)} documents for query")
             return formatted_results
             
@@ -382,17 +421,24 @@ class NaiveRAG:
         try:
             logger.info(f"Processing query: {question}")
             
+            # rewrite the query
+            rewritten_query = self.rewrite_query(question)
+            logger.info(f"Rewritten query: {rewritten_query}")
+
             # Retrieve relevant documents
-            retrieved_docs = self.retrieve_documents(question)
+            retrieved_docs = self.retrieve_documents(rewritten_query)
     
+            # Rerank the documents
+            reranked_docs = self.rerank_documents(rewritten_query, retrieved_docs)
+
             # Generate response
-            response = self.generate_response(question, retrieved_docs=retrieved_docs)
+            response = self.generate_response(rewritten_query, retrieved_docs=reranked_docs)
             
             # Prepare result
             result = {
                 'question': question,
                 'answer': response,
-                'retrieved_documents': retrieved_docs,
+                'retrieved_documents': reranked_docs,
                 'num_retrieved': len(retrieved_docs),
                 'timestamp': datetime.now().isoformat()
             }
@@ -402,6 +448,38 @@ class NaiveRAG:
             
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}")
+            raise
+
+    
+    def rewrite_query(self, query: str) -> str:
+        """
+        Rewrite the query to improve the retrieval quality.
+        """
+        try:
+            rewrite_prompt = f"Rewrite the query: {query} to a more specific and reconded query to improve the retrieval quality."
+
+            response = self.llm_pipeline(
+                rewrite_prompt,
+                max_length=len(rewrite_prompt.split()) + self.config.get("max_tokens", 150),
+                temperature=self.config.get("temperature", 0.7),
+                do_sample=True,
+                pad_token_id=self.llm_tokenizer.eos_token_id
+            )
+
+                        # Extract generated text
+            generated_text = response[0]['generated_text']
+            
+            # Clean up the response
+            if "Answer:" in generated_text:
+                answer = generated_text.split("Answer:")[-1].strip()
+            else:
+                answer = generated_text.strip()
+            
+            logger.info(f"Generated response for query: {query[:50]}...")
+            return answer
+            
+        except Exception as e:
+            logger.error(f"Error rewriting query: {str(e)}")
             raise
     
     def evaluate(self, test_data_size: int, question_col: str = "question", 
@@ -413,6 +491,7 @@ class NaiveRAG:
             test_data: DataFrame containing test questions and answers
             question_col: Name of the question column
             answer_col: Name of the answer column
+            top_k: Number of documents to retrieve for each question
             
         Returns:
             Dictionary containing evaluation metrics
@@ -482,38 +561,38 @@ class NaiveRAG:
             logger.error(f"Error during evaluation: {str(e)}")
             raise
     
-
-
-
 def main():
     """
     Example usage of the Naive RAG system.
     """
     # Initialize RAG system
-    rag = NaiveRAG(config_path="config.json")
+    rag = EnhancedRAG(config_path="config.json")
     
     # Load models
     rag.load_embedding_model()
     rag.load_llm_model()
+    rag.load_reranker()
     
     # Load documents
     rag.load_documents("hf://datasets/rag-datasets/rag-mini-wikipedia/data/passages.parquet/part.0.parquet", col_name="passage", num_rows=3200)
     rag.load_test_data("hf://datasets/rag-datasets/rag-mini-wikipedia/data/test.parquet/part.0.parquet")
     # Build index
     rag.build_index()
+    evaluation_results = rag.evaluate(test_data_size=3, question_col="question", answer_col="answer")
+    print(evaluation_results)
     
-    # Example query
-    result = rag.query(rag.test_data.iloc[0]['question'])
-    ground_truth = rag.test_data.iloc[0]['answer']
-    print(f"Question: {result['question']}")
-    print(f"Answer from RAG: {result['answer']}")
-    print(f"Ground truth: {ground_truth}")
-    print(f"F1 score: {calculate_f1_score(result['answer'], ground_truth)}")
-    print(f"Exact match: {calculate_exact_match(result['answer'], ground_truth)}")
-    print(f"Retrieved {result['num_retrieved']} documents")
-    print("Top retrieved documents:")
-    for j, doc in enumerate(result['retrieved_documents'][:5], 1):
-        print(f"  {j}. (Score: {doc['similarity_score']:.3f}) {doc['text'][:100]}...")
+    # # Example query
+    # result = rag.query(rag.test_data.iloc[3]['question'])
+    # ground_truth = rag.test_data.iloc[3]['answer']
+    # print(f"Question: {result['question']}")
+    # print(f"Answer from RAG: {result['answer']}")
+    # print(f"Ground truth: {ground_truth}")
+    # print(f"F1 score: {calculate_f1_score(result['answer'], ground_truth)}")
+    # print(f"Exact match: {calculate_exact_match(result['answer'], ground_truth)}")
+    # print(f"Retrieved {result['num_retrieved']} documents")
+    # print("Top retrieved documents:")
+    # for j, doc in enumerate(result['retrieved_documents'][:5], 1):
+    #     print(f"  {j}. (Score: {doc['similarity_score']:.3f}) {doc['text'][:100]}...")
     
 
 

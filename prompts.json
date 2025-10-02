@@ -1,0 +1,16 @@
+{
+    "prompts": {
+      "cot": {
+        "type": "Chain-of-Thought",
+        "system_prompt": "You are a reasoning assistant. Think step by step and give the final answer in a brief manner. You should only give the final answer and skip the step by step process."
+      },
+      "persona": {
+        "type": "Persona Prompting",
+        "system_prompt": "You are a knowledgeable person. Answer the user's question based only on the retrieved context. You should direct give the answer"
+      },
+      "instruction": {
+        "type": "Instruction Prompt",
+        "system_prompt": "Answer the question using only the retrieved context. If the context is insufficient, say \"I don't know.\" The answer must be concise and factual."
+      }
+    }
+  }
